@@ -13,7 +13,6 @@ using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Providers;
-using MediaBrowser.Model.Serialization;
 
 namespace Jellyfin.Plugin.Omdb
 {
@@ -23,24 +22,20 @@ namespace Jellyfin.Plugin.Omdb
     public class OmdbImageProvider : IRemoteImageProvider
     {
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly IJsonSerializer _jsonSerializer;
         private readonly IFileSystem _fileSystem;
         private readonly IServerConfigurationManager _configurationManager;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="OmdbImageProvider"/> class.
         /// </summary>
-        /// <param name="jsonSerializer">Instance of the <see cref="IJsonSerializer"/> interface.</param>
         /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
         /// <param name="fileSystem">Instance of the <see cref="IFileSystem"/> interface.</param>
         /// <param name="configurationManager">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
         public OmdbImageProvider(
-            IJsonSerializer jsonSerializer,
             IHttpClientFactory httpClientFactory,
             IFileSystem fileSystem,
             IServerConfigurationManager configurationManager)
         {
-            _jsonSerializer = jsonSerializer;
             _httpClientFactory = httpClientFactory;
             _fileSystem = fileSystem;
             _configurationManager = configurationManager;
@@ -62,7 +57,7 @@ namespace Jellyfin.Plugin.Omdb
 
             var list = new List<RemoteImageInfo>();
 
-            var provider = new OmdbProvider(_jsonSerializer, _httpClientFactory, _fileSystem, _configurationManager);
+            var provider = new OmdbProvider(_httpClientFactory, _fileSystem, _configurationManager);
 
             if (!string.IsNullOrWhiteSpace(imdbId))
             {

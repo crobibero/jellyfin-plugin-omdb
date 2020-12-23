@@ -5,17 +5,18 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.Omdb.Dtos;
 using MediaBrowser.Common.Extensions;
+using MediaBrowser.Common.Json;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
-using MediaBrowser.Model.Serialization;
 
 namespace Jellyfin.Plugin.Omdb
 {
@@ -24,7 +25,6 @@ namespace Jellyfin.Plugin.Omdb
     /// </summary>
     public class OmdbProvider
     {
-        private readonly IJsonSerializer _jsonSerializer;
         private readonly IFileSystem _fileSystem;
         private readonly IServerConfigurationManager _configurationManager;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -33,17 +33,14 @@ namespace Jellyfin.Plugin.Omdb
         /// <summary>
         /// Initializes a new instance of the <see cref="OmdbProvider"/> class.
         /// </summary>
-        /// <param name="jsonSerializer">Instance of the <see cref="IJsonSerializer"/> interface.</param>
         /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
         /// <param name="fileSystem">Instance of the <see cref="IFileSystem"/> interface.</param>
         /// <param name="configurationManager">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
         public OmdbProvider(
-            IJsonSerializer jsonSerializer,
             IHttpClientFactory httpClientFactory,
             IFileSystem fileSystem,
             IServerConfigurationManager configurationManager)
         {
-            _jsonSerializer = jsonSerializer;
             _httpClientFactory = httpClientFactory;
             _fileSystem = fileSystem;
             _configurationManager = configurationManager;
@@ -254,8 +251,8 @@ namespace Jellyfin.Plugin.Omdb
                 resultString = resultString.Replace("\"N/A\"", "\"\"", StringComparison.OrdinalIgnoreCase);
             }
 
-            var result = _jsonSerializer.DeserializeFromString<RootObject>(resultString);
-            return result;
+            var result = JsonSerializer.Deserialize<RootObject>(resultString, JsonDefaults.GetOptions());
+            return result ?? new RootObject();
         }
 
         internal async Task<SeasonRootObject> GetSeasonRootObject(string imdbId, int seasonId, CancellationToken cancellationToken)
@@ -273,8 +270,8 @@ namespace Jellyfin.Plugin.Omdb
                 }
             }
 
-            var result = _jsonSerializer.DeserializeFromString<SeasonRootObject>(resultString);
-            return result;
+            var result = JsonSerializer.Deserialize<SeasonRootObject>(resultString, JsonDefaults.GetOptions());
+            return result ?? new SeasonRootObject();
         }
 
         internal static bool IsValidSeries(Dictionary<string, string> seriesProviderIds)
@@ -330,12 +327,12 @@ namespace Jellyfin.Plugin.Omdb
                     "i={0}&plot=short&tomatoes=true&r=json",
                     imdbParam));
 
-            using var response = await GetOmdbResponse(_httpClientFactory.CreateClient(NamedClient.Default), url, cancellationToken).ConfigureAwait(false);
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var rootObject = await _jsonSerializer.DeserializeFromStreamAsync<RootObject>(stream).ConfigureAwait(false);
+            var jsonOptions = JsonDefaults.GetOptions();
+            var rootObject = await GetDeserializedOmdbResponse<RootObject>(_httpClientFactory.CreateClient(NamedClient.Default), url, jsonOptions, cancellationToken).ConfigureAwait(false);
             var directory = Path.GetDirectoryName(path) ?? throw new ResourceNotFoundException($"Provided path ({path}) is not valid.");
             Directory.CreateDirectory(directory);
-            _jsonSerializer.SerializeToFile(rootObject, path);
+            await using FileStream jsonFileStream = File.Create(path);
+            await JsonSerializer.SerializeAsync(jsonFileStream, rootObject, jsonOptions, cancellationToken).ConfigureAwait(false);
 
             return path;
         }
@@ -369,14 +366,33 @@ namespace Jellyfin.Plugin.Omdb
                     imdbParam,
                     seasonId));
 
-            using var response = await GetOmdbResponse(_httpClientFactory.CreateClient(NamedClient.Default), url, cancellationToken).ConfigureAwait(false);
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            var rootObject = await _jsonSerializer.DeserializeFromStreamAsync<SeasonRootObject>(stream).ConfigureAwait(false);
+            var jsonOptions = JsonDefaults.GetOptions();
+            var rootObject = await GetDeserializedOmdbResponse<SeasonRootObject>(_httpClientFactory.CreateClient(NamedClient.Default), url, jsonOptions, cancellationToken).ConfigureAwait(false);
             var directory = Path.GetDirectoryName(path) ?? throw new ResourceNotFoundException($"Provided path ({path}) is not valid.");
             Directory.CreateDirectory(directory);
-            _jsonSerializer.SerializeToFile(rootObject, path);
+            await using FileStream jsonFileStream = File.Create(path);
+            await JsonSerializer.SerializeAsync(jsonFileStream, rootObject, jsonOptions, cancellationToken).ConfigureAwait(false);
 
             return path;
+        }
+
+        /// <summary>
+        /// Get an omdb response already deserialized into an object.
+        /// </summary>
+        /// <param name="httpClient">The http client.</param>
+        /// <param name="url">The url to request.</param>
+        /// <param name="jsonOptions">The json serialization options.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <typeparam name="T">The object in which the json response should be deserialized.</typeparam>
+        /// <returns>The omdb response deserialized into an object.</returns>
+        public static async Task<T?> GetDeserializedOmdbResponse<T>(HttpClient httpClient, Uri url, JsonSerializerOptions jsonOptions, CancellationToken cancellationToken)
+        {
+            using var response = await GetOmdbResponse(httpClient, url, cancellationToken).ConfigureAwait(false);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            // OMDb is sending "N/A" for no empty number fields
+            content = content.Replace("\"N/A\"", "\"0\"", StringComparison.InvariantCulture);
+            return JsonSerializer.Deserialize<T>(content, jsonOptions);
         }
 
         /// <summary>

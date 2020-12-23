@@ -9,7 +9,6 @@ using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Providers;
-using MediaBrowser.Model.Serialization;
 
 namespace Jellyfin.Plugin.Omdb
 {
@@ -18,7 +17,6 @@ namespace Jellyfin.Plugin.Omdb
     /// </summary>
     public class OmdbEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeInfo>
     {
-        private readonly IJsonSerializer _jsonSerializer;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly OmdbItemProvider _itemProvider;
         private readonly IFileSystem _fileSystem;
@@ -27,23 +25,20 @@ namespace Jellyfin.Plugin.Omdb
         /// <summary>
         /// Initializes a new instance of the <see cref="OmdbEpisodeProvider"/> class.
         /// </summary>
-        /// <param name="jsonSerializer">Instance of the <see cref="IJsonSerializer"/> interface.</param>
         /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
         /// <param name="libraryManager">Instance of the <see cref="ILibraryManager"/> interface.</param>
         /// <param name="fileSystem">Instance of the <see cref="IFileSystem"/> interface.</param>
         /// <param name="configurationManager">Instance of the <see cref="IServerConfigurationManager"/> interface.</param>
         public OmdbEpisodeProvider(
-            IJsonSerializer jsonSerializer,
             IHttpClientFactory httpClientFactory,
             ILibraryManager libraryManager,
             IFileSystem fileSystem,
             IServerConfigurationManager configurationManager)
         {
-            _jsonSerializer = jsonSerializer;
             _httpClientFactory = httpClientFactory;
             _fileSystem = fileSystem;
             _configurationManager = configurationManager;
-            _itemProvider = new OmdbItemProvider(jsonSerializer, httpClientFactory, libraryManager, fileSystem, configurationManager);
+            _itemProvider = new OmdbItemProvider(httpClientFactory, libraryManager, fileSystem, configurationManager);
         }
 
         /// <inheritdoc />
@@ -77,7 +72,7 @@ namespace Jellyfin.Plugin.Omdb
                     var imdbId = info.GetProviderId(MetadataProvider.Imdb);
                     if (!string.IsNullOrEmpty(imdbId))
                     {
-                        result.HasMetadata = await new OmdbProvider(_jsonSerializer, _httpClientFactory, _fileSystem, _configurationManager)
+                        result.HasMetadata = await new OmdbProvider(_httpClientFactory, _fileSystem, _configurationManager)
                             .FetchEpisodeData(result, info.IndexNumber.Value, info.ParentIndexNumber.Value, imdbId, seriesImdbId, info.MetadataLanguage, info.MetadataCountryCode, cancellationToken).ConfigureAwait(false);
                     }
                 }
